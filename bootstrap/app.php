@@ -19,6 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
     'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
+    'role'  => \App\Http\Middleware\EnsureUserHasRole::class,
+    'adult' => \App\Http\Middleware\EnsureAdult::class,
 ]);
     
         $middleware->web(append: [

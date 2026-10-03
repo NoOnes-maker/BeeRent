@@ -9,16 +9,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            // 🔐 'role' column: user | admin | superadmin
-            // Indexed for fast filtering in dashboards
-            $table->string('role')->default('user')->index()->after('email');
+            // DATE (no time) — birthdate only, after last_name for readability
+            $table->date('birthdate')->nullable()->after('last_name');
         });
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('role');
+            $table->dropColumn('birthdate');
         });
     }
 };

@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Actions\Fortify\AuthenticateUser;
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Enums\UserRole;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -16,26 +18,22 @@ use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+        $this->configureRedirects();
+        $this->configureAuthentication();
     }
 
     /**
-     * Configure Fortify actions.
+     * Fortify actions — where new users are created and passwords reset.
      */
     private function configureActions(): void
     {
@@ -44,18 +42,18 @@ class FortifyServiceProvider extends ServiceProvider
     }
 
     /**
-     * Configure Fortify views.
+     * Inertia view callbacks — how Fortify renders each auth page.
      */
     private function configureViews(): void
     {
         Fortify::loginView(fn (Request $request) => Inertia::render('auth/login', [
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
-            'status' => $request->session()->get('status'),
+            'status'           => $request->session()->get('status'),
         ]));
 
         Fortify::resetPasswordView(fn (Request $request) => Inertia::render('auth/reset-password', [
-            'email' => $request->email,
-            'token' => $request->route('token'),
+            'email'         => $request->email,
+            'token'         => $request->route('token'),
             'passwordRules' => Password::defaults()->toPasswordRulesString(),
         ]));
 
@@ -77,7 +75,7 @@ class FortifyServiceProvider extends ServiceProvider
     }
 
     /**
-     * Configure rate limiting.
+     * Rate limiting — throttles login attempts and other sensitive endpoints.
      */
     private function configureRateLimiting(): void
     {
@@ -86,7 +84,9 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('login', function (Request $request) {
-            $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
+            $throttleKey = Str::transliterate(
+                Str::lower($request->input(Fortify::username())).'|'.$request->ip()
+            );
 
             return Limit::perMinute(5)->by($throttleKey);
         });
@@ -95,6 +95,41 @@ class FortifyServiceProvider extends ServiceProvider
             return Limit::perMinute(10)->by(
                 ($request->input('credential.id') ?: $request->session()->getId()).'|'.$request->ip(),
             );
+        });
+    }
+
+    /**
+     * Redirect behavior after register/login.
+     *
+     * - After register: log the user out and send them to the landing page.
+     * - After login: redirect based on role.
+     */
+    private function configureRedirects(): void
+    {
+        Fortify::redirects('register', function (Request $request) {
+            auth()->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return '/';
+        });
+
+        Fortify::redirects('login', function (Request $request) {
+            return match ($request->user()->role) {
+                UserRole::SUPERADMIN => '/superadmin/dashboard',
+                UserRole::ADMIN      => '/admin/dashboard',
+                default              => '/dashboard',
+            };
+        });
+    }
+
+    /**
+     * Custom authentication (role picker).
+     */
+    private function configureAuthentication(): void
+    {
+        Fortify::authenticateUsing(function (Request $request) {
+            return (new AuthenticateUser)($request);
         });
     }
 }
