@@ -1,40 +1,43 @@
+import '../css/app.css';
+
 import { createInertiaApp } from '@inertiajs/react';
+import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import { createRoot } from 'react-dom/client';
+
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
-import AppLayout from '@/layouts/app-layout';
-import AuthLayout from '@/layouts/auth-layout';
-import SettingsLayout from '@/layouts/settings/layout';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'BeeRent';
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
-    layout: (name) => {
-        switch (true) {
-            case name === 'welcome':
-                return null;
-            case name.startsWith('auth/'):
-                return AuthLayout;
-            case name.startsWith('settings/'):
-                return [AppLayout, SettingsLayout];
-            default:
-                return AppLayout;
+
+    resolve: (name) =>
+        resolvePageComponent(
+            `./pages/${name}.tsx`,
+            import.meta.glob('./pages/**/*.tsx'),
+        ),
+
+    setup({ el, App, props }) {
+        // `el` is typed as HTMLElement | null in v1.
+        // It's guaranteed to be non-null because Inertia only calls
+        // setup() after finding #app in the DOM, but TypeScript doesn't
+        // know that. Narrow the type or cast — this is the standard
+        // fix for Inertia v1 + strict TS.
+        if (!el) {
+            throw new Error('Inertia root element #app not found');
         }
-    },
-    strictMode: true,
-    withApp(app) {
-        return (
+
+        createRoot(el).render(
             <TooltipProvider delayDuration={0}>
-                {app}
+                <App {...props} />
                 <Toaster />
-            </TooltipProvider>
+            </TooltipProvider>,
         );
     },
-    progress: {
-        color: '#4B5563',
-    },
+
+    progress: { color: '#4B5563' },
 });
 
-// This will set light / dark mode on load...
 initializeTheme();

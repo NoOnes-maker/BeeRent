@@ -2,52 +2,140 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
+use App\Enums\UserRole;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Carbon;
-use Laravel\Fortify\Contracts\PasskeyUser;
-use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
-/**
- * @property int $id
- * @property string $name
- * @property string $email
- * @property Carbon|null $email_verified_at
- * @property string $password
- * @property string|null $two_factor_secret
- * @property string|null $two_factor_recovery_codes
- * @property Carbon|null $two_factor_confirmed_at
- * @property string|null $remember_token
- * @property Carbon|null $created_at
- * @property Carbon|null $updated_at
- */
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements PasskeyUser
+class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
-    public function isAdmin(): bool
-{
-    return $this->role === 'admin';
-}
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    use HasFactory, Notifiable, TwoFactorAuthenticatable;
+
+    protected $fillable = [
+        'name', // kept for backward compatibility
+        'first_name',
+        'middle_name',
+        'last_name',
+        'birthdate',
+        'email',
+        'password',
+        'role',
+    ];
+
+    protected $hidden = [
+        'password', 'remember_token', 'two_factor_secret',
+    ];
+
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'email_verified_at'       => 'datetime',
+            'password'                => 'hashed',
+            'role'                    => UserRole::class,
             'two_factor_confirmed_at' => 'datetime',
+            'birthdate'               => 'date',
         ];
+    }
+
+    /* ─────────────────────────────────────────────
+     |  ACCESSORS  (computed attributes)
+     |─────────────────────────────────────────────*/
+
+    /**
+     * 'full_name' — read-only accessor.
+     * Usage: $user->full_name  →  "Juan Dela Cruz"
+     */
+    protected function fullName(): Attribute
+    {
+        return Attribute::get(fn () => collect([
+            $this->first_name,
+            $this->middle_name,
+            $this->last_name,
+        ])->filter()->implode(' '));
+    }
+
+    /**
+     * 'name' accessor — keeps every existing view/query working.
+     * If first_name is set, use it; otherwise fall back to the raw name column.
+     */
+    protected function name(): Attribute
+    {
+        return Attribute::get(fn () =>
+            $this->first_name
+                ? trim("{$this->first_name} {$this->last_name}")
+                : $this->attributes['name'] ?? ''
+        );
+    }
+
+    /**
+     * 'initials' — handy for avatars.
+     * Usage: $user->initials  →  "JD"
+     */
+    protected function initials(): Attribute
+    {
+        return Attribute::get(fn () =>
+            strtoupper(substr($this->first_name ?? '', 0, 1) .
+                       substr($this->last_name ?? '', 0, 1))
+        );
+    }
+    /* ─────────────────────────────────────────────
+    |  AGE HELPERS
+    |─────────────────────────────────────────────*/
+
+    /**
+    * 'age' accessor — computed every read.
+    * Usage: $user->age  →  int|null
+    */
+    protected function age(): Attribute
+    {
+        return Attribute::get(fn () => $this->birthdate?->age);
+    }
+
+    /**
+     * 'formatted_birthdate' — nice for UI.
+     * Usage: $user->formatted_birthdate  →  "October 1, 2005"
+     */
+    protected function formattedBirthdate(): Attribute
+    {
+        return Attribute::get(fn () =>
+            $this->birthdate?->format('F j, Y')
+        );
+    }
+
+    /** Boolean — quick check anywhere in code */
+    public function isAdult(int $minAge = 18): bool
+    {
+        return $this->birthdate && $this->birthdate->age >= $minAge;
+    }
+
+    /* ─────────────────────────────────────────────
+     |  RELATIONSHIPS
+     |─────────────────────────────────────────────*/
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(Item::class);
+    }
+
+    public function rentals(): HasMany
+    {
+        return $this->hasMany(Rental::class, 'renter_id');
+    }
+
+    /* ─────────────────────────────────────────────
+     |  ROLE HELPERS
+     |─────────────────────────────────────────────*/
+
+    public function isAdmin(): bool
+    {
+        return in_array($this->role, [UserRole::ADMIN, UserRole::SUPERADMIN], true);
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === UserRole::SUPERADMIN;
     }
 }

@@ -1,29 +1,39 @@
 <?php
 
-use App\Http\Controllers\AdminLoginController;
-use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\SuperAdminDashboardController;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
-Route::inertia('/', 'welcome')->name('home');
+// ─── Public routes ─────────────────────────────────────
+Route::get('/', fn () => Inertia::render('welcome'))->name('landingpage');
 
+// ─── Auth-only routes (any logged-in user) ─────────────
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('/landingpage', 'landingpage')->name('landingpage');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 });
 
-// Admin login page — MUST be outside the auth middleware group
-Route::inertia('/admin/login', 'admin/login')->name('admin.login');
-Route::post('/admin/login', [AdminLoginController::class, 'store']);
+// ─── Admin routes (admin + superadmin only) ────────────
+Route::middleware(['auth', 'verified', 'role:admin,superadmin'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])
+            ->name('dashboard');
+    });
 
-// Admin logout
-Route::post('/admin/logout', function () {
-    Auth::logout();
-    request()->session()->invalidate();
-    request()->session()->regenerateToken();
-    return redirect('/admin/login');
-})->name('admin.logout');
-
-Route::middleware(['auth', 'verified', 'admin'])->group(function () {
-    Route::inertia('/admin', 'admin/dashboard')->name('admin.dashboard');
-});
+// ─── Superadmin routes (superadmin only) ───────────────
+Route::middleware(['auth', 'verified', 'role:superadmin'])
+    ->prefix('superadmin')
+    ->name('superadmin.')
+    ->group(function () {
+        Route::get('/dashboard', [SuperAdminDashboardController::class, 'index'])
+            ->name('dashboard');
+        Route::delete('/items/{item}', [SuperAdminDashboardController::class, 'deleteItem'])
+            ->name('items.destroy');
+        Route::post('/items/{id}/restore', [SuperAdminDashboardController::class, 'restoreItem'])
+            ->name('items.restore');
+    });
 
 require __DIR__.'/settings.php';
